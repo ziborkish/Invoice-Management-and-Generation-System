@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="lv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rēķinu sistēma</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ===================== HOME ===================== -->
+  <div class="screen active" id="screen-home">
+    <div class="grid">
+      <div class="quad q-tl" id="q-settings">
+        <div class="quad-top"><span class="quad-title">Iestatījumi</span><span class="quad-arrow">→</span></div>
+        <div>
+          <span class="quad-sub">Piegādātāja dati un nodokļu likmes</span>
+        </div>
+      </div>
+
+      <div class="quad q-tr" id="q-list">
+        <div class="quad-top"><span class="quad-title">Rēķinu saraksts</span><span class="quad-arrow">→</span></div>
+        <div id="home-list-preview"></div>
+      </div>
+
+      <div class="quad q-bl" id="q-dashboard">
+        <div class="quad-top"><span class="quad-title">Pārskats</span><span class="quad-arrow">→</span></div>
+        <div id="home-dashboard-preview"></div>
+      </div>
+
+      <div class="quad q-br" id="q-generate">
+        <div class="quad-top"><span class="quad-title">Rēķinu izrakstīšana</span><span class="quad-arrow">→</span></div>
+        <div>
+          <div class="quad-big">+</div>
+          <span class="quad-sub">Izveidot jaunu rēķinu un lejupielādēt PDF</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SETTINGS ===================== -->
+  <div class="screen" id="screen-settings">
+    <div class="topbar">
+      <button class="ghost back" data-target="screen-home">← Atpakaļ</button>
+      <h2>Iestatījumi</h2>
+    </div>
+    <div class="content">
+      <span class="eyebrow">Noklusējuma piegādātāja informācija</span>
+      <p class="helptext" style="margin-bottom:16px;">
+        Aizpildiet vienreiz — dati tiks automātiski ielikti katrā jaunā rēķinā.
+      </p>
+      <div class="grid2">
+        <div class="field"><input type="text" id="s-seller-name" placeholder="Vārds, uzvārds / SIA nosaukums"></div>
+        <div class="field"><input type="text" id="s-seller-reg" placeholder="Saimnieciskās darbības reģ. Nr."></div>
+        <div class="field"><input type="text" id="s-seller-vat" placeholder="PVN reģ. Nr. (ja piemērojams)"></div>
+        <div class="field"><input type="text" id="s-seller-email" placeholder="E-pasts"></div>
+        <div class="field"><input type="text" id="s-seller-phone" placeholder="Tālrunis"></div>
+        <div class="field"><textarea id="s-seller-address" rows="2" placeholder="Adrese"></textarea></div>
+        <div class="field"><input type="text" id="s-seller-iban" placeholder="IBAN"></div>
+        <div class="field"><input type="text" id="s-seller-bic" placeholder="SWIFT/BIC"></div>
+        <div class="field"><input type="text" id="s-seller-bank" placeholder="Banka (piem. Swedbank)"></div>
+      </div>
+
+      <div class="bar"></div>
+
+      <span class="eyebrow">Nodokļu prognozes likmes</span>
+      <div class="grid3">
+        <div class="field">
+          <span class="eyebrow">IIN likme (%)</span>
+          <input type="number" id="s-tax-iin" min="0" max="100" step="0.1" placeholder="piem. 25.5">
+        </div>
+        <div class="field">
+          <span class="eyebrow">VSAOI likme (%)</span>
+          <input type="number" id="s-tax-vsaoi" min="0" max="100" step="0.1" placeholder="piem. 31.07">
+        </div>
+        <div class="field">
+          <span class="eyebrow">Prognozētie izdevumi (% no ieņēmumiem)</span>
+          <input type="number" id="s-tax-expense" min="0" max="100" step="1" placeholder="piem. 20">
+        </div>
+      </div>
+
+      <button id="btn-save-settings" type="button">Saglabāt iestatījumus</button>
+    </div>
+  </div>
+
+  <!-- ===================== DASHBOARD ===================== -->
+  <div class="screen" id="screen-dashboard">
+    <div class="topbar">
+      <button class="ghost back" data-target="screen-home">← Atpakaļ</button>
+      <h2>Pārskats</h2>
+    </div>
+    <div class="content">
+      <div class="grid4">
+        <div class="stat"><span class="eyebrow">Rēķinu skaits</span><div class="num" id="stat-count">0</div></div>
+        <div class="stat"><span class="eyebrow">Izrakstīts kopā (ar PVN)</span><div class="num" id="stat-total-gross">€0.00</div></div>
+        <div class="stat"><span class="eyebrow">Ieņēmumi (bez PVN)</span><div class="num" id="stat-total-net">€0.00</div></div>
+        <div class="stat"><span class="eyebrow">Nesamaksātie rēķini</span><div class="num" id="stat-unpaid">€0.00</div></div>
+      </div>
+
+      <div class="bar thin"></div>
+
+      <span class="eyebrow">Sadalījums pēc PVN veida</span>
+      <table id="vat-breakdown-table">
+        <thead><tr><th>PVN veids</th><th class="align-r">Skaits</th><th class="align-r">Summa (bez PVN)</th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="bar"></div>
+
+      <span class="eyebrow">Nodokļu prognoze</span>
+      <div class="grid3">
+        <div class="stat"><span class="eyebrow">Ar nodokli apliekamā bāze</span><div class="num small" id="tax-base">€0.00</div></div>
+        <div class="stat"><span class="eyebrow">Prognozētais IIN</span><div class="num small" id="tax-iin-amount">€0.00</div></div>
+        <div class="stat"><span class="eyebrow">Prognozētās VSAOI</span><div class="num small" id="tax-vsaoi-amount">€0.00</div></div>
+        <div class="stat"><span class="eyebrow">Jāatliek nodokļiem (kontā)</span><div class="num small" id="tax-total-amount">€0.00</div></div>
+        <div class="stat"><span class="eyebrow">Aptuveni "tīrie" ienākumi</span><div class="num small" id="tax-net-income">€0.00</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== LIST ===================== -->
+  <div class="screen" id="screen-list">
+    <div class="topbar">
+      <button class="ghost back" data-target="screen-home">← Atpakaļ</button>
+      <h2>Rēķinu saraksts</h2>
+    </div>
+    <div class="content">
+      <table id="invoice-table">
+        <thead>
+          <tr><th>Nr.</th><th>Datums</th><th>Klients</th><th>PVN veids</th><th class="align-r">Kopā</th><th class="align-c">Statuss</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      
+      <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--gray-line); color: var(--gray-label); font-size: 11.5px;">
+        <span style="font-weight: 500; color: var(--black);">Norāde:</span> Klikšķiniet uz statusa indikatora, lai pārslēgtu starp "Nesamaksāts" un "Samaksāts".
+      </div>
+
+      <div class="empty" id="list-empty" style="display:none;">Vēl nav neviena izrakstīta rēķina.</div>
+    </div>
+  </div>
+
+  <!-- ===================== GENERATE ===================== -->
+  <div class="screen" id="screen-generate">
+    <div class="topbar">
+      <button class="ghost back" id="generate-back">← Atpakaļ</button>
+      <h2 id="generate-title">Rēķinu izrakstīšana</h2>
+    </div>
+    <div class="content">
+      <div class="grid2">
+        <div class="field"><span class="eyebrow">Rēķins Nr.</span><input type="text" id="f-invoice-number"></div>
+        <div class="field">
+          <span class="eyebrow">Rēķina Valoda</span>
+          <select id="f-language"><option value="lv">Latviešu</option><option value="en">English (Angļu)</option></select>
+        </div>
+        <div class="field">
+          <span class="eyebrow">Valūta</span>
+          <select id="f-currency"><option value="EUR">EUR</option><option value="USD">USD</option><option value="GBP">GBP</option></select>
+        </div>
+        <div class="field"><span class="eyebrow">Izrakstīšanas datums</span><input type="date" id="f-issue-date"></div>
+        <div class="field"><span class="eyebrow">Apmaksas termiņš</span><input type="date" id="f-due-date"></div>
+      </div>
+
+      <div class="bar"></div>
+
+      <div class="grid2">
+        <div>
+          <span class="eyebrow">Piegādātājs (jūs)</span>
+          <div class="field"><input type="text" id="f-seller-name" placeholder="Vārds, uzvārds / SIA nosaukums"></div>
+          <div class="field"><input type="text" id="f-seller-reg" placeholder="Saimnieciskās darbības reģ. Nr."></div>
+          <div class="field"><input type="text" id="f-seller-vat" placeholder="PVN reģ. Nr. (ja piemērojams)"></div>
+          <div class="field"><textarea id="f-seller-address" rows="2" placeholder="Adrese"></textarea></div>
+          <div class="grid2">
+            <div class="field"><input type="text" id="f-seller-email" placeholder="E-pasts"></div>
+            <div class="field"><input type="text" id="f-seller-phone" placeholder="Tālrunis"></div>
+          </div>
+          <div class="grid2">
+            <div class="field"><input type="text" id="f-seller-iban" placeholder="IBAN"></div>
+            <div class="field"><input type="text" id="f-seller-bic" placeholder="SWIFT/BIC"></div>
+          </div>
+          <div class="field"><input type="text" id="f-seller-bank" placeholder="Banka (piem. Swedbank)"></div>
+        </div>
+        <div>
+          <span class="eyebrow">Saņēmējs (klients)</span>
+          <div class="field" style="margin-bottom:12px;">
+            <select id="f-customer-select" style="background: var(--gray-soft);">
+              <option value="">-- Izvēlēties no saglabātajiem klientiem --</option>
+            </select>
+          </div>
+          <div class="field"><input type="text" id="f-customer-name" placeholder="Uzņēmuma / klienta nosaukums"></div>
+          <div class="field"><textarea id="f-customer-address" rows="2" placeholder="Adrese"></textarea></div>
+          <div class="field"><input type="text" id="f-customer-country" placeholder="Valsts"></div>
+          <div class="field"><input type="text" id="f-customer-vat" placeholder="PVN Nr. (ES B2B)"></div>
+          <button class="ghost" id="btn-save-customer" type="button" style="margin-top:4px; width:100%; font-size:12px;">Saglabāt/atjaunināt klientu</button>
+        </div>
+      </div>
+
+      <div class="bar"></div>
+
+      <span class="eyebrow">Pozīcijas</span>
+      <div id="lineitems-wrap" style="margin-top:12px;"></div>
+      <button class="ghost" id="btn-add-item" type="button" style="margin-top:8px;">+ Pievienot pozīciju</button>
+
+      <div class="bar"></div>
+
+      <div class="grid2">
+        <div class="field">
+          <span class="eyebrow">PVN veids</span>
+          <select id="f-vat-type">
+            <option value="STANDARD_21">Standarta 21% PVN</option>
+            <option value="REVERSE_CHARGE">Apgrieztā PVN maksāšana (ES B2B)</option>
+            <option value="ZERO_RATE">0% likme</option>
+            <option value="EXEMPT">Atbrīvots no PVN</option>
+          </select>
+          <div class="helptext" id="vat-type-help"></div>
+        </div>
+        <div class="field"><span class="eyebrow">Maksājuma atsauce</span><input type="text" id="f-payment-ref" placeholder="piem. rēķina numurs"></div>
+      </div>
+
+      <table class="totals" style="max-width:340px; margin-left:auto;">
+        <tr><td>Starpsumma</td><td class="align-r value" id="f-subtotal">€0.00</td></tr>
+        <tr><td>PVN</td><td class="align-r value" id="f-vat-amount">€0.00</td></tr>
+        <tr><td style="border-top:1px solid var(--black); padding-top:10px;">Kopā</td>
+            <td class="align-r value" style="border-top:1px solid var(--black); padding-top:10px;" id="f-total">€0.00</td></tr>
+      </table>
+
+      <div class="form-actions">
+        <button id="btn-save-invoice" type="button">Saglabāt un lejupielādēt PDF</button>
+        <button class="ghost" id="btn-save-only" type="button">Tikai saglabāt</button>
+        <button class="ghost" id="btn-reset-form" type="button">Notīrīt formu</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="data-widget">
+    <div class="data-widget-actions">
+      <button id="btn-import-json" type="button" title="Augšupielādēt datus">Importēt</button>
+      <button id="btn-export-json" type="button" title="Lejupielādēt datus">Eksportēt</button>
+    </div>
+    <div class="data-widget-icon" title="Datu rezerves kopijas">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="17 8 12 3 7 8"></polyline>
+        <line x1="12" y1="3" x2="12" y2="15"></line>
+      </svg>
+    </div>
+    <input type="file" id="file-import-json" accept=".json" style="display:none;">
+  </div>
+
+  <script src="script.js" defer></script>
+</body>
+</html>
