@@ -79,7 +79,7 @@
         </div>
       </div>
 
-      <button id="btn-save-settings" type="button">Saglabāt iestatījumus</button>
+      <button id="btn-save-settings" type="button" style="margin-top: 16px;">Saglabāt iestatījumus</button>
     </div>
   </div>
 
@@ -107,14 +107,41 @@
 
       <div class="bar"></div>
 
-      <span class="eyebrow">Nodokļu prognoze</span>
+      <span class="eyebrow">Nodokļu prognoze un atlikums</span>
       <div class="grid3">
         <div class="stat"><span class="eyebrow">Ar nodokli apliekamā bāze</span><div class="num small" id="tax-base">€0.00</div></div>
         <div class="stat"><span class="eyebrow">Prognozētais IIN</span><div class="num small" id="tax-iin-amount">€0.00</div></div>
         <div class="stat"><span class="eyebrow">Prognozētās VSAOI</span><div class="num small" id="tax-vsaoi-amount">€0.00</div></div>
         <div class="stat"><span class="eyebrow">Jāatliek nodokļiem (kontā)</span><div class="num small" id="tax-total-amount">€0.00</div></div>
-        <div class="stat"><span class="eyebrow">Aptuveni "tīrie" ienākumi</span><div class="num small" id="tax-net-income">€0.00</div></div>
+        <div class="stat"><span class="eyebrow">Atskaitīts abonementos</span><div class="num small" id="tax-expenses-amount" style="color:var(--red);">€0.00</div></div>
+        <div class="stat"><span class="eyebrow">Rezerves konta atlikums</span><div class="num small" id="tax-net-income" style="color:var(--black);">€0.00</div></div>
       </div>
+
+      <div class="bar"></div>
+
+      <span class="eyebrow">Fiksētie ikmēneša izdevumi</span>
+      <p class="helptext" style="margin-bottom:16px;">
+        Pievienojiet regulāros izdevumus (piemēram, abonementus), kas katru mēnesi automātiski tiks atskaitīti no jūsu rezerves konta.
+      </p>
+      
+      <div id="expenses-list" style="margin-bottom:12px;"></div>
+      
+      <div class="grid3" style="align-items: end;">
+        <div class="field">
+          <span class="eyebrow">Nosaukums</span>
+          <input type="text" id="s-exp-name" placeholder="piem. Adobe">
+        </div>
+        <div class="field">
+          <span class="eyebrow">Summa mēnesī (€)</span>
+          <input type="number" id="s-exp-amt" min="0" step="0.01" placeholder="piem. 15.72">
+        </div>
+        <div class="field">
+          <span class="eyebrow">Sākuma datums</span>
+          <input type="date" id="s-exp-start" title="No kura datuma sākt rēķināt">
+        </div>
+      </div>
+      <button class="ghost" id="btn-add-exp" type="button" style="font-size:12px; margin-bottom: 24px;">+ Pievienot izdevumu</button>
+
     </div>
   </div>
 

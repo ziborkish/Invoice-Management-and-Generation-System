@@ -1,0 +1,1 @@
+{"name":"rekinu","version":"1.0.0","dependencies":{"express":"^5.2.1","multer":"^2.4.0","pdf-parse":"^2.4.5"}}
