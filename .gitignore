@@ -1,0 +1,5 @@
+echo "node_modules/" > .gitignore
+echo "data.json" >> .gitignore
+echo "invoices/" >> .gitignore
+echo "json/" >> .gitignore
+echo ".DS_Store" >> .gitignore
