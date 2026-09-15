@@ -25,20 +25,22 @@ Lai darbinātu šo sistēmu, tavā datorā jābūt instalētam **Node.js**.
 Sistēma ir veidota tā, lai to varētu palaist ar vienu klikšķi.
 
 ### Mac un Linux lietotājiem:
-1. Pārliecinies, ka pirms pirmās palaišanas skriptam ir iedotas izpildes (executable) tiesības. Atver termināli un ieraksti (neaizmirsti atstarpi pirms faila ceļa):
-   ```bash
-   chmod +x start.command
-2. Pēctam atver start.command failu.
-3. Skripts automātiski uzinstalēs trūkstošās pakotnes, palaidīs serveri un atvērs sistēmu pārlūkprogrammā.
-### Windows lietotājiem:
-1. Atver start.bat failu.
-2. Skripts pats uzinstalēs nepieciešamo un atvērs sistēmu tavā noklusējuma pārlūkprogrammā (http://localhost:3000).
+1. Pārliecinies, ka pirms pirmās palaišanas skriptam ir iedotas izpildes (executable) tiesības. Atver termināli, dodies uz mapīti un ieraksti: `chmod +x start.command`
+2. **Svarīgi Mac lietotājiem (Apple Gatekeeper apvedceļš):** Tā kā fails ir lejupielādēts no interneta, Apple to var bloķēt, ja mēģināsi to atvērt ar dubultklikšķi. Lai to atļautu, dari vienu no šiem:
+   * Uzklikšķini uz `start.command` faila ar **labo peles taustiņu** un izvēlies **"Open"** (Atvērt). Pēc tam brīdinājuma logā vēlreiz nospied "Open".
+   * **VAI** terminālī noņem failam karantīnas birku ar šo komandu: `xattr -c start.command`
+3. Turpmāk vari failu vienkārši atvērt ar dubultklikšķi. 
+4. Skripts automātiski uzinstalēs trūkstošās pakotnes (`express`, `multer`, `pdf-parse`), palaidīs serveri un atvērs sistēmu pārlūkprogrammā.
 
+### Windows lietotājiem:
+1. Atver **`start.bat`** failu ar dubultklikšķi.
+2. Skripts pats uzinstalēs nepieciešamo un atvērs sistēmu tavā noklusējuma pārlūkprogrammā (`http://localhost:3000`).
+
+---
 
 # Invoice & Expense Manager
 
 A lightweight, browser-based invoice generation and expense management tool built for freelancers and small businesses. The system is designed with a strict focus on complete data privacy (100% local execution).
-
 
 ## Key Features
 
@@ -63,11 +65,13 @@ To run this system, you must have **Node.js** installed on your computer.
 The application is designed to run "out-of-the-box" with a single click, requiring no terminal configuration from the user. (Note: The `data.json` file and `invoices/` directory will be automatically generated upon your first interaction).
 
 ### For Mac and Linux Users:
-1. Ensure the startup script has executable permissions before the first run. Open your terminal, navigate to the folder, and run:
-   ```bash
-   chmod +x start.command
-2. From then on, simply double-click the start.command file.
-3. The script will automatically install missing dependencies (express, multer, pdf-parse), start the local server, and open the system in your default browser.
+1. Ensure the startup script has executable permissions before the first run. Open your terminal, navigate to the folder, and run: `chmod +x start.command`
+2. **Important for Mac users (Gatekeeper bypass):** Because the file was downloaded from the internet, macOS will block it if you double-click it. To allow it, do one of the following:
+   * **Right-click** (or Control-click) the `start.command` file and select **"Open"**. Click "Open" again in the warning dialog.
+   * **OR** remove the quarantine attribute via terminal by running: `xattr -c start.command`
+3. From then on, simply double-click the `start.command` file to run the application.
+4. The script will automatically install missing dependencies (`express`, `multer`, `pdf-parse`), start the local server, and open the system in your default browser.
+
 ### For Windows Users:
-1. Simply double-click the start.bat file.
-2. The script will install dependencies, launch the server, and open the system in your default browser (http://localhost:3000).
+1. Simply double-click the **`start.bat`** file.
+2. The script will install dependencies, launch the server, and open the system in your default browser (`http://localhost:3000`).
