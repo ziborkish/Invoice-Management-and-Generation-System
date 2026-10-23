@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
-const pdfParse = require('pdf-parse');
+const { PDFParse } = require('pdf-parse');
 
 const app = express();
 const PORT = 3000;
@@ -99,7 +99,9 @@ app.post('/api/upload-expense', upload.single('invoice'), async (req, res) => {
     // 2. Ja nosaukums neder, lasām PDF saturu
     if (!isValid) {
         try {
-            const data = await pdfParse(req.file.buffer);
+            const parser = new PDFParse({ data: new Uint8Array(req.file.buffer) });
+            const data = await parser.getText();
+            await parser.destroy();
             const text = data.text.toLowerCase();
             if (text.includes(y) && monthVariants.some(v => text.includes(v))) {
                 isValid = true;

@@ -24,18 +24,24 @@
     EXEMPT: "Darījums ir atbrīvots no PVN."
   };
 
+  // VSAOI: līdz mēneša griestiem – pilnā (lietotāja iestatītā) likme, virs tiem – tikai 10% pensiju daļa
+  const VSAOI_FULL_CAP = 780, VSAOI_PENSION_RATE = 0.10;
+
   let invoices = [], customers = [], expense_records = [];
   let editingId = null, lineItemSeq = 0, generateReturnScreen = 'screen-home';
-  let settings = { seller:{}, tax:{ iinRate:"", vsaoiRate:"", expensePct:"" }, expenses: [] };
+  let settings = { seller:{}, tax:{ iinRate:"", vsaoiRate:"", expensePct:"" }, expenses: [], vsaoi_payments: {} };
 
   async function loadAll(){
     try {
       const res = await fetch('/api/data');
       const d = await res.json();
-      invoices = d.invoices || [];
-      customers = d.customers || [];
-      expense_records = d.expense_records || [];
-      if(d.settings) settings = d.settings;
+      invoices = d.invoices ? d.invoices : [];
+      customers = d.customers ? d.customers : [];
+      expense_records = d.expense_records ? d.expense_records : [];
+      if(d.settings) {
+          settings = d.settings;
+          if(!settings.vsaoi_payments) settings.vsaoi_payments = {};
+      }
     } catch(e) {
       console.error("Nevarēja ielādēt datus no servera", e);
     }
@@ -55,7 +61,7 @@
 
   function fmt(n, currency){
     const val = isFinite(n) ? n : 0;
-    const symbol = currency === 'USD' ? '$' : currency === 'GBP' ? '£' : '€';
+    const symbol = currency === 'USD' ? '$' : (currency === 'GBP' ? '£' : '€');
     return symbol + val.toFixed(2);
   }
   const uid = () => 'id_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
@@ -67,19 +73,23 @@
   async function autoGenerateExpenses() {
     let addedNew = false;
     const now = new Date();
-    (settings.expenses || []).forEach(ex => {
+    const exps = settings.expenses ? settings.expenses : [];
+    exps.forEach(ex => {
       if(!ex.id) ex.id = uid(); 
       if(!ex.start) return;
       const pts = ex.start.split('-');
-      let d = new Date(pts[0], pts[1]-1, pts[2]); 
-      while (d <= now) {
+      const sy = parseInt(pts[0]), sm = parseInt(pts[1])-1, sd = parseInt(pts[2]);
+      // Katru reizi rēķinām no sākuma datuma, lai 31. datums nenobīdās uz nākamo mēnesi (31. janv. → 3. marts)
+      for (let n = 0; ; n++) {
+        const lastDay = new Date(sy, sm + n + 1, 0).getDate();
+        const d = new Date(sy, sm + n, Math.min(sd, lastDay));
+        if (d > now) break;
         const dStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
         const exists = expense_records.find(r => (r.sub_id === ex.id || r.name === ex.name) && r.date === dStr);
         if (!exists) {
           expense_records.push({ id: uid(), sub_id: ex.id, name: ex.name, amount: ex.amount, date: dStr, verified: false });
           addedNew = true;
         }
-        d.setMonth(d.getMonth() + 1); 
       }
     });
     if (addedNew) await saveAll();
@@ -147,7 +157,8 @@
     });
   }
 
-  function addLineItem(data = { description:'', unit: getVal('f-language')==='en'?'pcs':'gab.', qty:1, unitPrice:0 }){
+  function addLineItem(data){
+    if(!data) data = { description:'', unit: getVal('f-language')==='en'?'pcs':'gab.', qty:1, unitPrice:0 };
     const row = document.createElement('div');
     row.className = 'lineitem-row'; row.dataset.id = 'li_' + (lineItemSeq++);
     row.innerHTML = `
@@ -175,30 +186,39 @@
     });
   }
   
-  if($('btn-add-item')) $('btn-add-item').addEventListener('click', ()=>addLineItem());
+  if($('btn-add-item')) {
+      $('btn-add-item').addEventListener('click', ()=>addLineItem());
+  }
   
   if($('f-vat-type')) {
-    $('f-vat-type').addEventListener('change', ()=>{ $('vat-type-help').textContent = vatHelp[$('f-vat-type').value] || ""; recalcTotals(); });
-    if(!$('f-show-vat-mode')) {
-      const wrap = document.createElement('div'); wrap.style.marginTop = '6px';
-      wrap.innerHTML = `<label style="font-size:12.5px; display:inline-flex; align-items:center; gap:6px; cursor:pointer; color:var(--black);"><input type="checkbox" id="f-show-vat-mode" checked style="width:auto; height:auto; margin:0; border:none; accent-color:var(--black);"> Rādīt PVN režīmu izdrukā</label>`;
-      $('f-vat-type').parentNode.appendChild(wrap);
-    }
+      $('f-vat-type').addEventListener('change', ()=>{ 
+          const helpTxt = vatHelp[$('f-vat-type').value] ? vatHelp[$('f-vat-type').value] : "";
+          $('vat-type-help').textContent = helpTxt; 
+          recalcTotals(); 
+      });
+      if(!$('f-show-vat-mode')) {
+          const wrap = document.createElement('div'); wrap.style.marginTop = '6px';
+          wrap.innerHTML = `<label style="font-size:12.5px; display:inline-flex; align-items:center; gap:6px; cursor:pointer; color:var(--black);"><input type="checkbox" id="f-show-vat-mode" checked style="width:auto; height:auto; margin:0; border:none; accent-color:var(--black);"> Rādīt PVN režīmu izdrukā</label>`;
+          $('f-vat-type').parentNode.appendChild(wrap);
+      }
   }
-  if($('f-currency')) $('f-currency').addEventListener('change', recalcTotals);
+
+  if($('f-currency')) {$('f-currency').addEventListener('change', recalcTotals);
+  }
 
   function recalcTotals(){
     const curr = getVal('f-currency'), items = getLineItems(), subtotal = items.reduce((s,i)=>s+i.total,0);
     const vatType = getVal('f-vat-type'), vatAmount = vatType === 'STANDARD_21' ? subtotal * 0.21 : 0;
-    if($('f-subtotal')) $('f-subtotal').textContent = fmt(subtotal, curr);
-    if($('f-vat-amount')) $('f-vat-amount').textContent = fmt(vatAmount, curr);
-    if($('f-total')) $('f-total').textContent = fmt(subtotal + vatAmount, curr);
+    if($('f-subtotal'))$('f-subtotal').textContent = fmt(subtotal, curr);
+    if($('f-vat-amount'))$('f-vat-amount').textContent = fmt(vatAmount, curr);
+    if($('f-total'))$('f-total').textContent = fmt(subtotal + vatAmount, curr);
   }
 
   function suggestInvoiceNumber(){
     const now = new Date(), year = now.getFullYear(), month = String(now.getMonth() + 1).padStart(2, '0');
     let maxN = invoices.reduce((max, inv) => {
-      const m = /INV-(\d{4})(?:-\d{2})?-(\d+)/.exec(inv.invoice_number || '');
+      const iNum = inv.invoice_number ? inv.invoice_number : '';
+      const m = /INV-(\d{4})(?:-\d{2})?-(\d+)/.exec(iNum);
       return (m && parseInt(m[1],10) === year) ? Math.max(max, parseInt(m[2],10)) : max;
     }, 0);
     return `INV-${year}-${month}-${String(maxN+1).padStart(3,'0')}`;
@@ -211,32 +231,36 @@
       setVal('f-language', 'lv'); setVal('f-currency', 'EUR'); setVal('f-issue-date', todayISO()); setVal('f-due-date', '');
       setVal('f-customer-select', ''); setVal('f-customer-name', ''); setVal('f-customer-address', ''); setVal('f-customer-country', ''); setVal('f-customer-vat', '');
       setVal('f-vat-type', 'STANDARD_21'); setVal('f-payment-ref', '');
-      if($('f-show-vat-mode')) $('f-show-vat-mode').checked = true;
+      if($('f-show-vat-mode'))$('f-show-vat-mode').checked = true;
       $('lineitems-wrap').innerHTML = ''; addLineItem();
 
-      const sv = settings.seller || {};
+      const sv = settings.seller ? settings.seller : {};
       setVal('f-seller-name', sv.name); setVal('f-seller-reg', sv.regNo); setVal('f-seller-vat', sv.vatNo);
       setVal('f-seller-address', sv.address); setVal('f-seller-email', sv.email); setVal('f-seller-phone', sv.phone);
       setVal('f-seller-iban', sv.iban); setVal('f-seller-bic', sv.bic); setVal('f-seller-bank', sv.bank);
       $('vat-type-help').textContent = vatHelp.STANDARD_21; recalcTotals();
     }
   }
-  if($('btn-reset-form')) $('btn-reset-form').addEventListener('click', resetForm);
+  
+  if($('btn-reset-form')) {$('btn-reset-form').addEventListener('click', resetForm);
+  }
 
   function buildInvoiceFromForm(){
     const items = getLineItems().filter(i=>i.description.trim() !== '' || i.qty || i.unitPrice);
     if(items.length === 0 || !getVal('f-invoice-number').trim()) return null;
 
     const sub = items.reduce((s,i)=>s+i.total,0), vt = getVal('f-vat-type'), va = vt === 'STANDARD_21' ? sub*0.21 : 0;
-    const existing = invoices.find(i=>i.id===editingId) || {};
+    const foundInv = invoices.find(i=>i.id===editingId);
+    const existing = foundInv ? foundInv : {};
 
+    const selBank = getVal('f-seller-bank');
     return {
-      id: editingId || uid(), invoice_number: getVal('f-invoice-number'), language: getVal('f-language'),
-      show_vat_mode: $('f-show-vat-mode') ? $('f-show-vat-mode').checked : true, issue_date: getVal('f-issue-date'), due_date: getVal('f-due-date'), currency: getVal('f-currency'),
-      seller: { name: getVal('f-seller-name'), regNo: getVal('f-seller-reg'), vatNo: getVal('f-seller-vat'), address: getVal('f-seller-address'), email: getVal('f-seller-email'), phone: getVal('f-seller-phone'), bank: getVal('f-seller-bank')||'Swedbank', bic: getVal('f-seller-bic'), iban: getVal('f-seller-iban') },
+      id: editingId ? editingId : uid(), invoice_number: getVal('f-invoice-number'), language: getVal('f-language'),
+      show_vat_mode: $('f-show-vat-mode') ?$('f-show-vat-mode').checked : true, issue_date: getVal('f-issue-date'), due_date: getVal('f-due-date'), currency: getVal('f-currency'),
+      seller: { name: getVal('f-seller-name'), regNo: getVal('f-seller-reg'), vatNo: getVal('f-seller-vat'), address: getVal('f-seller-address'), email: getVal('f-seller-email'), phone: getVal('f-seller-phone'), bank: selBank ? selBank : 'Swedbank', bic: getVal('f-seller-bic'), iban: getVal('f-seller-iban') },
       customer: { name: getVal('f-customer-name'), address: getVal('f-customer-address'), country: getVal('f-customer-country'), vat_no: getVal('f-customer-vat') },
       line_items: items, vat_type: vt, vat_rate: vt==='STANDARD_21'?21:0, subtotal: sub, vat_amount: va, total: sub+va,
-      payment_reference: getVal('f-payment-ref'), status: existing.status || 'unpaid', created_at: existing.created_at || new Date().toISOString()
+      payment_reference: getVal('f-payment-ref'), status: existing.status ? existing.status : 'unpaid', created_at: existing.created_at ? existing.created_at : new Date().toISOString()
     };
   }
 
@@ -254,19 +278,28 @@
     showScreen(generateReturnScreen);
   };
   
-  if($('btn-save-only')) $('btn-save-only').addEventListener('click', () => handleSave(false));
-  if($('btn-save-invoice')) $('btn-save-invoice').addEventListener('click', () => handleSave(true));
+  if($('btn-save-only')) {$('btn-save-only').addEventListener('click', () => handleSave(false));
+  }
+  if($('btn-save-invoice')) {$('btn-save-invoice').addEventListener('click', () => handleSave(true));
+  }
 
   function renderList(){
     const tbody = document.querySelector('#invoice-table tbody');
     if(!tbody) return; tbody.innerHTML = '';
     $('list-empty').style.display = invoices.length === 0 ? 'block' : 'none';
     
-    invoices.slice().sort((a,b)=> (b.issue_date||'').localeCompare(a.issue_date||'')).forEach(inv=>{
+    invoices.slice().sort((a,b)=> {
+        const d1 = b.issue_date ? b.issue_date : '';
+        const d2 = a.issue_date ? a.issue_date : '';
+        return d1.localeCompare(d2);
+    }).forEach(inv=>{
       const tr = document.createElement('tr');
+      const cName = inv.customer.name ? inv.customer.name : '—';
+      const vLabel = VAT_LABELS[inv.vat_type] ? VAT_LABELS[inv.vat_type] : inv.vat_type;
+      const iDate = inv.issue_date ? inv.issue_date : '';
       tr.innerHTML = `
-        <td>${escapeHtml(inv.invoice_number)}</td><td>${escapeHtml(inv.issue_date||'')}</td><td>${escapeHtml(inv.customer.name||'—')}</td>
-        <td>${escapeHtml(VAT_LABELS[inv.vat_type]||inv.vat_type)}</td><td class="align-r value">${fmt(inv.total, inv.currency)}</td>
+        <td>${escapeHtml(inv.invoice_number)}</td><td>${escapeHtml(iDate)}</td><td>${escapeHtml(cName)}</td>
+        <td>${escapeHtml(vLabel)}</td><td class="align-r value">${fmt(inv.total, inv.currency)}</td>
         <td class="align-c"><div class="status-toggle ${inv.status==='paid'?'paid':'unpaid'}" data-id="${inv.id}">${inv.status==='paid'?'Samaksāts':'Nesamaksāts'}</div></td>
         <td class="row-actions"><button class="ghost btn-edit" data-id="${inv.id}">Labot</button><button class="ghost btn-pdf" data-id="${inv.id}">PDF</button><button class="danger btn-delete" data-id="${inv.id}">Dzēst</button></td>`;
       tbody.appendChild(tr);
@@ -293,11 +326,17 @@
     setVal('f-seller-iban', inv.seller.iban); setVal('f-seller-bic', inv.seller.bic); setVal('f-seller-bank', inv.seller.bank);
     setVal('f-customer-name', inv.customer.name); setVal('f-customer-address', inv.customer.address); setVal('f-customer-country', inv.customer.country); setVal('f-customer-vat', inv.customer.vat_no);
     setVal('f-vat-type', inv.vat_type);
-    if($('f-show-vat-mode')) $('f-show-vat-mode').checked = inv.show_vat_mode !== false;
-    $('vat-type-help').textContent = vatHelp[inv.vat_type] || '';
     
+    if($('f-show-vat-mode')) {$('f-show-vat-mode').checked = inv.show_vat_mode !== false;
+    }
+    const ht = vatHelp[inv.vat_type] ? vatHelp[inv.vat_type] : '';
+    $('vat-type-help').textContent = ht;
     $('lineitems-wrap').innerHTML = '';
-    inv.line_items.forEach(li => addLineItem({description: li.description, unit: li.unit || (inv.language === 'en' ? 'pcs' : 'gab.'), qty: li.qty, unitPrice: li.unitPrice}));
+    
+    inv.line_items.forEach(li => {
+        const u = li.unit ? li.unit : (inv.language === 'en' ? 'pcs' : 'gab.');
+        addLineItem({description: li.description, unit: u, qty: li.qty, unitPrice: li.unitPrice});
+    });
     recalcTotals(); showScreen('screen-generate');
   }
 
@@ -311,7 +350,6 @@
     return { count: invoices.length, gross, net, unpaid: invoices.filter(i=>i.status!=='paid').reduce((s,i)=>s+i.total,0) };
   }
 
-  // --- FAILA AUGŠUPIELĀDE ---
   window.triggerExpenseUpload = function(expenseId, expenseName, targetDate) {
     const inp = document.createElement('input');
     inp.type = 'file'; inp.accept = '.pdf';
@@ -341,7 +379,7 @@
               const data = await res.json();
               rec.verified = true;
               rec.fileName = data.fileName;
-              rec.validationMethod = data.validationMethod; // Saglabājam validācijas veidu ("nosaukuma" vai "satura")
+              rec.validationMethod = data.validationMethod; 
               
               await saveAll();
               renderDashboard();
@@ -363,10 +401,147 @@
     inp.click();
   };
 
+  let vsaoiMonthlyData = {};
+
+  function renderVsaoiWidget(monthlyData) {
+    vsaoiMonthlyData = monthlyData;
+    let wrap = $('vsaoi-widget-wrap');
+    if(!wrap) {
+        wrap = document.createElement('div');
+        wrap.id = 'vsaoi-widget-wrap';
+        wrap.style.marginTop = '16px';
+        const expensesList = $('expenses-list');
+        if(expensesList) {
+            expensesList.parentNode.insertBefore(wrap, expensesList);
+        } else {
+            document.querySelector('#screen-dashboard .content').appendChild(wrap);
+        }
+    }
+
+    const years = new Set([new Date().getFullYear()]);
+    Object.keys(monthlyData).forEach(ym => years.add(parseInt(ym.split('-')[0])));
+    const yearsArr = Array.from(years).sort((a,b)=>b-a);
+    
+    let selHtml = '';
+    yearsArr.forEach(y => {
+        [4,3,2,1].forEach(q => {
+            selHtml += `<option value="${y}-Q${q}">${y}. gada ${q}. Ceturksnis</option>`;
+        });
+    });
+
+    const currentQ = `${new Date().getFullYear()}-Q${Math.floor(new Date().getMonth()/3)+1}`;
+    
+    if(!wrap.innerHTML) {
+        wrap.innerHTML = `
+            <div class="bar"></div>
+            <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:16px;">
+                <div>
+                    <span class="eyebrow" style="margin-bottom:8px;">VSAOI Ceturkšņa atskaite un nomaksa (EDS formāts)</span>
+                    <select id="vsaoi-q-select" style="width:auto; font-size:15px; font-weight:600; padding:4px 0; border-bottom:2px solid var(--black);">
+                        ${selHtml}
+                    </select>
+                </div>
+                <div>
+                    <div id="btn-vsaoi-pay" class="status-toggle pending" style="width:auto; font-size:12.5px; padding:6px 14px;">Atzīmēt kā nomaksātu</div>
+                </div>
+            </div>
+            <table style="table-layout:fixed; margin-bottom:24px; border:1px solid var(--gray-line);">
+                <thead>
+                    <tr style="background:var(--gray-soft);">
+                        <th style="width:40%; border-bottom:1px solid var(--gray-line);">Rādītāji</th>
+                        <th class="align-r" style="border-bottom:1px solid var(--gray-line);">1. mēn</th>
+                        <th class="align-r" style="border-bottom:1px solid var(--gray-line);">2. mēn</th>
+                        <th class="align-r" style="border-bottom:1px solid var(--gray-line);">3. mēn</th>
+                        <th class="align-r" style="border-bottom:1px solid var(--gray-line);">Kopā</th>
+                    </tr>
+                </thead>
+                <tbody id="vsaoi-tbody"></tbody>
+            </table>
+        `;
+        
+        $('vsaoi-q-select').value = currentQ;
+        $('vsaoi-q-select').addEventListener('change', () => { updateVsaoiTable(vsaoiMonthlyData); });
+        $('btn-vsaoi-pay').addEventListener('click', async () => {
+            const qKey = $('vsaoi-q-select').value;
+            settings.vsaoi_payments = settings.vsaoi_payments ? settings.vsaoi_payments : {};
+            settings.vsaoi_payments[qKey] = !settings.vsaoi_payments[qKey];
+            await saveAll();
+            renderDashboard();
+        });
+    }
+
+    // Gadu saraksts jāatjauno, ja parādās jauns gads (piem., pirmais rēķins nākamajā gadā)
+    const sel = $('vsaoi-q-select');
+    if (sel.innerHTML.trim() !== selHtml.trim()) {
+        const keep = sel.value;
+        sel.innerHTML = selHtml;
+        sel.value = keep;
+    }
+    updateVsaoiTable(monthlyData);
+  }
+
+  function updateVsaoiTable(monthlyData) {
+    const qKey = $('vsaoi-q-select').value;
+    const [yStr, qStr] = qKey.split('-Q');
+    const year = parseInt(yStr), q = parseInt(qStr);
+    
+    const m1 = (q-1)*3 + 1;
+    const pad = n => String(n).padStart(2, '0');
+    const ym1 = `${year}-${pad(m1)}`, ym2 = `${year}-${pad(m1+1)}`, ym3 = `${year}-${pad(m1+2)}`;
+
+    const d1 = monthlyData[ym1] ? monthlyData[ym1] : { base: 0, vsaoi: 0 };
+    const d2 = monthlyData[ym2] ? monthlyData[ym2] : { base: 0, vsaoi: 0 };
+    const d3 = monthlyData[ym3] ? monthlyData[ym3] : { base: 0, vsaoi: 0 };
+
+    const calcObj = base => ({ full: Math.min(base, VSAOI_FULL_CAP), pens: Math.max(0, base - VSAOI_FULL_CAP) });
+    const o1 = calcObj(d1.base), o2 = calcObj(d2.base), o3 = calcObj(d3.base);
+
+    const fullTotal = o1.full + o2.full + o3.full;
+    const pensTotal = o1.pens + o2.pens + o3.pens;
+    const taxTotal = d1.vsaoi + d2.vsaoi + d3.vsaoi;
+
+    const format = n => (isFinite(n) ? n : 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    $('vsaoi-tbody').innerHTML = `
+        <tr>
+            <td style="border-right:1px solid var(--gray-line); padding-left:12px;">VSAOI objekts (pilnā likme)</td>
+            <td class="align-r" style="border-right:1px solid var(--gray-line);">${format(o1.full)}</td>
+            <td class="align-r" style="border-right:1px solid var(--gray-line);">${format(o2.full)}</td>
+            <td class="align-r" style="border-right:1px solid var(--gray-line);">${format(o3.full)}</td>
+            <td class="align-r value" style="padding-right:12px;">${format(fullTotal)}</td>
+        </tr>
+        <tr>
+            <td style="border-right:1px solid var(--gray-line); padding-left:12px;">Objekts pensiju apdrošināšanai (10%)</td>
+            <td class="align-r" style="border-right:1px solid var(--gray-line);">${format(o1.pens)}</td>
+            <td class="align-r" style="border-right:1px solid var(--gray-line);">${format(o2.pens)}</td>
+            <td class="align-r" style="border-right:1px solid var(--gray-line);">${format(o3.pens)}</td>
+            <td class="align-r value" style="padding-right:12px;">${format(pensTotal)}</td>
+        </tr>
+        <tr style="background:#fffcfc; border-top:1px solid var(--gray-line);">
+            <td style="font-weight:600; border-right:1px solid var(--gray-line); padding-left:12px;">Aprēķinātās iemaksas kopā</td>
+            <td class="align-r" style="font-weight:600; border-right:1px solid var(--gray-line);">${format(d1.vsaoi)}</td>
+            <td class="align-r" style="font-weight:600; border-right:1px solid var(--gray-line);">${format(d2.vsaoi)}</td>
+            <td class="align-r" style="font-weight:600; border-right:1px solid var(--gray-line);">${format(d3.vsaoi)}</td>
+            <td class="align-r value" style="font-weight:700; color:var(--red); padding-right:12px;">${format(taxTotal)}</td>
+        </tr>
+    `;
+
+    const isPaid = settings.vsaoi_payments && settings.vsaoi_payments[qKey];
+    const btn = $('btn-vsaoi-pay');
+    if(isPaid) {
+        btn.className = 'status-toggle paid';
+        btn.innerHTML = '✓ VSAOI Nomaksāts';
+    } else {
+        btn.className = 'status-toggle pending';
+        btn.innerHTML = 'Atzīmēt kā nomaksātu';
+    }
+  }
+
   function renderExpensesList() {
     if (!$('expenses-list')) return;
     let html = '';
-    (settings.expenses || []).forEach((ex, i) => {
+    const exps = settings.expenses ? settings.expenses : [];
+    exps.forEach((ex, i) => {
       const records = expense_records.filter(r => r.sub_id === ex.id || r.name === ex.name).sort((a,b) => a.date.localeCompare(b.date));
       
       let recordsHtml = records.map(r => {
@@ -381,7 +556,6 @@
             ? `<div class="status-toggle paid" style="cursor:default;" title="Fails atrodas mapē: invoices/${ex.name.toLowerCase()}">Ir glabātuvē</div>` 
             : `<div id="btn-upload-${r.id}" class="status-toggle pending" onclick="window.triggerExpenseUpload('${ex.id}', '${escapeAttr(ex.name)}', '${targetDate}')">Augšupielādēt PDF</div>`;
 
-        // Zaļais validācijas teksts (ja ir reāli apstiprināts un sistēma atceras "kā")
         const validText = (isVerified && r.validationMethod) 
             ? `<span style="color:#0c7b39; font-size:11.5px; margin-left:12px; font-weight:500;">✓ Validēts pēc faila ${r.validationMethod}</span>` 
             : '';
@@ -411,58 +585,100 @@
   function renderDashboard(){
     if(!$('stat-count')) return;
     const s = computeStats();
-    $('stat-count').textContent = s.count; $('stat-total-gross').textContent = fmt(s.gross,'EUR');
-    $('stat-total-net').textContent = fmt(s.net,'EUR'); $('stat-unpaid').textContent = fmt(s.unpaid,'EUR');
+    $('stat-count').textContent = s.count; 
+    $('stat-total-gross').textContent = fmt(s.gross,'EUR');
+    $('stat-total-net').textContent = fmt(s.net,'EUR');$('stat-unpaid').textContent = fmt(s.unpaid,'EUR');
 
     const byType = {};
-    invoices.forEach(inv=>{ byType[inv.vat_type] = byType[inv.vat_type] || {count:0, net:0}; byType[inv.vat_type].count++; byType[inv.vat_type].net += inv.subtotal; });
+    invoices.forEach(inv=>{ byType[inv.vat_type] = byType[inv.vat_type] ? byType[inv.vat_type] : {count:0, net:0}; byType[inv.vat_type].count++; byType[inv.vat_type].net += inv.subtotal; });
     const tbody = document.querySelector('#vat-breakdown-table tbody');
     if(tbody) tbody.innerHTML = Object.keys(VAT_LABELS).map(k => byType[k] ? `<tr><td>${VAT_LABELS[k]}</td><td class="align-r">${byType[k].count}</td><td class="align-r">${fmt(byType[k].net,'EUR')}</td></tr>` : '').join('');
 
-    const t = settings.tax || {}, expensePct = num(t.expensePct) / 100;
-    const base = Math.max(0, s.net * (1 - expensePct));
-    const taxTotal = (base * (num(t.iinRate)/100)) + (base * (num(t.vsaoiRate)/100));
+    const ts = settings.tax ? settings.tax : {};
+    const expensePct = num(ts.expensePct) / 100, vsaoiRate = num(ts.vsaoiRate) / 100;
+    
+    const monthlyData = {};
+    invoices.forEach(inv => {
+        if (inv.issue_date) {
+            const ym = inv.issue_date.substring(0, 7);
+            if (!monthlyData[ym]) monthlyData[ym] = { inv: 0, exp: 0, base: 0, vsaoi: 0 };
+            monthlyData[ym].inv += inv.subtotal;
+        }
+    });
+    // Fiksētie izdevumi (abonementi) samazina peļņu tajā mēnesī, kurā tie ir samaksāti
+    expense_records.forEach(r => {
+        const ym = r.date.substring(0, 7);
+        if (!monthlyData[ym]) monthlyData[ym] = { inv: 0, exp: 0, base: 0, vsaoi: 0 };
+        monthlyData[ym].exp += r.amount;
+    });
+
+    let accurateTotalVSAOI = 0;
+    Object.keys(monthlyData).forEach(ym => {
+        // VSAOI bāze atbilst VID aprēķinam: ieņēmumi, abonementus neatskaitot
+        const base = Math.max(0, monthlyData[ym].inv * (1 - expensePct));
+        monthlyData[ym].base = base;
+        const tax = Math.min(base, VSAOI_FULL_CAP) * vsaoiRate + Math.max(0, base - VSAOI_FULL_CAP) * VSAOI_PENSION_RATE;
+        monthlyData[ym].vsaoi = tax;
+        accurateTotalVSAOI += tax;
+    });
 
     const totalFixedExp = expense_records.reduce((sum, r) => sum + r.amount, 0);
+    // IIN tiek rēķināts no peļņas (ieņēmumi bez PVN mīnus izdevumi), IIN bāzi nesamazinot par VSAOI
+    const baseGlobal = Math.max(0, (s.net - totalFixedExp) * (1 - expensePct));
+    const iinAmount = baseGlobal * (num(ts.iinRate)/100);
+    const taxTotal = iinAmount + accurateTotalVSAOI;
 
-    if($('tax-base')) $('tax-base').textContent = fmt(base,'EUR');
-    if($('tax-iin-amount')) $('tax-iin-amount').textContent = fmt(base * (num(t.iinRate)/100),'EUR');
-    if($('tax-vsaoi-amount')) $('tax-vsaoi-amount').textContent = fmt(base * (num(t.vsaoiRate)/100),'EUR');
-    if($('tax-total-amount')) $('tax-total-amount').textContent = fmt(taxTotal,'EUR');
-    if($('tax-expenses-amount')) $('tax-expenses-amount').textContent = fmt(totalFixedExp,'EUR');
-    
-    if($('tax-net-income')) {
-      $('tax-net-income').textContent = fmt(taxTotal - totalFixedExp,'EUR');
+    let paidVsaoiTotal = 0;
+    if(settings.vsaoi_payments) {
+        Object.keys(settings.vsaoi_payments).forEach(qKey => {
+            if(settings.vsaoi_payments[qKey]) {
+                const [yStr, qStr] = qKey.split('-Q');
+                const m1 = (parseInt(qStr)-1)*3 + 1;
+                for(let i=0; i<3; i++){
+                    const ym = `${yStr}-${String(m1+i).padStart(2,'0')}`;
+                    if(monthlyData[ym]) paidVsaoiTotal += monthlyData[ym].vsaoi;
+                }
+            }
+        });
     }
 
+    if($('tax-base'))$('tax-base').textContent = fmt(baseGlobal,'EUR');
+    if($('tax-iin-amount'))$('tax-iin-amount').textContent = fmt(iinAmount,'EUR');
+    if($('tax-vsaoi-amount'))$('tax-vsaoi-amount').textContent = fmt(accurateTotalVSAOI,'EUR');
+    if($('tax-total-amount'))$('tax-total-amount').textContent = fmt(taxTotal,'EUR');
+    if($('tax-expenses-amount'))$('tax-expenses-amount').textContent = fmt(totalFixedExp,'EUR');
+    
+    if($('tax-net-income')) {$('tax-net-income').textContent = fmt(taxTotal - paidVsaoiTotal,'EUR');
+    }
+
+    renderVsaoiWidget(monthlyData);
     renderExpensesList();
   }
 
   function renderHomePreview(){
     const s = computeStats();
     if($('home-dashboard-preview')) {
-        const t = settings.tax || {}, expensePct = num(t.expensePct) / 100;
+        const ts = settings.tax ? settings.tax : {};
+        const expensePct = num(ts.expensePct) / 100;
         const base = Math.max(0, s.net * (1 - expensePct));
-        const taxTotal = (base * (num(t.iinRate)/100)) + (base * (num(t.vsaoiRate)/100));
         
-        const expArr = Array.isArray(expense_records) ? expense_records : [];
-        const totalFixedExp = expArr.reduce((sum, r) => sum + r.amount, 0);
-        const expectedReserve = taxTotal - totalFixedExp;
-
         $('home-dashboard-preview').innerHTML = `<div class="quad-big">${fmt(s.gross,'EUR')}</div><span class="quad-sub">Izrakstīts kopā · ${s.count} rēķini</span><div class="bar thin"></div><span class="quad-sub">Ieņēmumi bez PVN: ${fmt(s.net,'EUR')}</span>`;
     }
-    if($('home-list-preview')) {
-        $('home-list-preview').innerHTML = invoices.length === 0 ? `<span class="quad-sub">Vēl nav neviena rēķina</span>` : 
-          invoices.slice().sort((a,b)=>(b.issue_date||'').localeCompare(a.issue_date||'')).slice(0,4).map(inv=>`<div class="quad-preview-row"><span>${escapeHtml(inv.invoice_number)} · ${escapeHtml(inv.customer.name||'—')}</span><span>${fmt(inv.total, inv.currency)}</span></div>`).join('');
+    if($('home-list-preview')) {$('home-list-preview').innerHTML = invoices.length === 0 ? `<span class="quad-sub">Vēl nav neviena rēķina</span>` : 
+          invoices.slice().sort((a,b)=>{
+              const d1 = b.issue_date ? b.issue_date : '';
+              const d2 = a.issue_date ? a.issue_date : '';
+              return d1.localeCompare(d2);
+          }).slice(0,4).map(inv=>`<div class="quad-preview-row"><span>${escapeHtml(inv.invoice_number)} · ${escapeHtml(inv.customer.name ? inv.customer.name : '—')}</span><span>${fmt(inv.total, inv.currency)}</span></div>`).join('');
     }
   }
 
-  if($('btn-save-settings')) {
-    $('btn-save-settings').addEventListener('click', async ()=>{
-      settings.seller = { name: getVal('s-seller-name'), regNo: getVal('s-seller-reg'), vatNo: getVal('s-seller-vat'), email: getVal('s-seller-email'), phone: getVal('s-seller-phone'), address: getVal('s-seller-address'), iban: getVal('s-seller-iban'), bic: getVal('s-seller-bic'), bank: getVal('s-seller-bank') };
-      settings.tax = { iinRate: getVal('s-tax-iin'), vsaoiRate: getVal('s-tax-vsaoi'), expensePct: getVal('s-tax-expense') };
-      await saveAll(); alert('Iestatījumi saglabāti.');
-    });
+  if($('btn-save-settings')) {$('btn-save-settings').addEventListener('click', async ()=>{
+          settings.seller = { name: getVal('s-seller-name'), regNo: getVal('s-seller-reg'), vatNo: getVal('s-seller-vat'), email: getVal('s-seller-email'), phone: getVal('s-seller-phone'), address: getVal('s-seller-address'), iban: getVal('s-seller-iban'), bic: getVal('s-seller-bic'), bank: getVal('s-seller-bank') };
+          settings.tax = { iinRate: getVal('s-tax-iin'), vsaoiRate: getVal('s-tax-vsaoi'), expensePct: getVal('s-tax-expense') };
+          await saveAll(); 
+          alert('Iestatījumi saglabāti.');
+      });
   }
 
   window.removeExpense = async function(i) { 
@@ -473,22 +689,25 @@
     renderHomePreview();
   };
 
-  if($('btn-add-exp')) {
-    $('btn-add-exp').addEventListener('click', async () => {
-      const name = getVal('s-exp-name').trim(), amt = num(getVal('s-exp-amt')), start = getVal('s-exp-start');
-      if(name && amt > 0 && start) {
-        settings.expenses = settings.expenses || [];
-        settings.expenses.push({ id: uid(), name, amount: amt, start });
-        await saveAll();
-        await autoGenerateExpenses(); 
-        setVal('s-exp-name',''); setVal('s-exp-amt',''); setVal('s-exp-start','');
-        renderDashboard(); renderHomePreview();
-      } else alert('Lūdzu aizpildiet visus izdevuma laukus (Nosaukums, Summa un Sākuma datums).');
-    });
+  if($('btn-add-exp')) {$('btn-add-exp').addEventListener('click', async () => {
+          const name = getVal('s-exp-name').trim(), amt = num(getVal('s-exp-amt')), start = getVal('s-exp-start');
+          if(name && amt > 0 && start) {
+            settings.expenses = settings.expenses ? settings.expenses : [];
+            settings.expenses.push({ id: uid(), name, amount: amt, start });
+            await saveAll();
+            await autoGenerateExpenses(); 
+            setVal('s-exp-name',''); setVal('s-exp-amt',''); setVal('s-exp-start','');
+            renderDashboard(); 
+            renderHomePreview();
+          } else {
+              alert('Lūdzu aizpildiet visus izdevuma laukus (Nosaukums, Summa un Sākuma datums).');
+          }
+      });
   }
 
   function fillSettingsForm(){
-    const sv = settings.seller || {}, t = settings.tax || {};
+    const sv = settings.seller ? settings.seller : {};
+    const t = settings.tax ? settings.tax : {};
     if($('s-seller-name')) {
       setVal('s-seller-name', sv.name); setVal('s-seller-reg', sv.regNo); setVal('s-seller-vat', sv.vatNo);
       setVal('s-seller-address', sv.address); setVal('s-seller-email', sv.email); setVal('s-seller-phone', sv.phone);
@@ -509,7 +728,6 @@
     return `${euros} euros ${cents} cents`;
   }
 
-  // --- PDF ĢENERĒŠANA AR STRIKTO 8 KOLONNU REŽĢI ---
   function downloadInvoicePDF(inv) { 
     const btn = document.querySelector(`.btn-pdf[data-id="${inv.id}"]`); 
     const origText = btn ? btn.innerText : ''; 
@@ -589,11 +807,11 @@
       return (isFinite(n) ? n : 0).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); 
     }; 
 
-    const itemsHtml = (inv.line_items || []).map((li, i) => ` 
+    const itemsHtml = (inv.line_items ? inv.line_items : []).map((li, i) => ` 
       <tr> 
         <td class="num">${i + 1}</td> 
-        <td class="desc">${escapeHtml(li.description || '')}</td> 
-        <td class="unit">${escapeHtml(li.unit || '')}</td> 
+        <td class="desc">${escapeHtml(li.description ? li.description : '')}</td> 
+        <td class="unit">${escapeHtml(li.unit ? li.unit : '')}</td> 
         <td class="qty">${li.qty}</td> 
         <td class="price">${fmtL(li.unitPrice)}</td> 
         <td class="sum">${fmtL(li.total)}</td> 
@@ -613,7 +831,7 @@
       vatNoteBlock += ` 
         <div class="vat-mode-line"> 
           <span class="lbl">${t.vatMode}:</span> 
-          <span>${escapeHtml(t.vatLabels[inv.vat_type] || inv.vat_type)}</span> 
+          <span>${escapeHtml(t.vatLabels[inv.vat_type] ? t.vatLabels[inv.vat_type] : inv.vat_type)}</span> 
         </div>`; 
     } 
 
@@ -623,8 +841,8 @@
       inv.seller.address ? `<div class="lbl">${t.address}</div><div>${escapeHtml(inv.seller.address)}</div>` : '', 
     ].join(''); 
 
-    const bankName = inv.seller.bank || (inv.seller.bic && inv.seller.bic.includes('HABA') ? 'Swedbank' : ''); 
-    const swiftCode = inv.seller.bic || ''; 
+    const bankName = inv.seller.bank ? inv.seller.bank : (inv.seller.bic && inv.seller.bic.includes('HABA') ? 'Swedbank' : ''); 
+    const swiftCode = inv.seller.bic ? inv.seller.bic : ''; 
 
     const sellerFinRows = [ 
       bankName ? `<div class="lbl">${t.bank}</div><div>${escapeHtml(bankName)}</div>` : '', 
@@ -723,11 +941,11 @@ td.sum { font-weight: 400; }
 <!-- Kontaktinformācija --> 
 <div class="parties"> 
 <div class="party-left"> 
-<div class="party-label">${t.supplier}</div><div class="party-name">${escapeHtml(inv.seller.name || '')}</div> 
+<div class="party-label">${t.supplier}</div><div class="party-name">${escapeHtml(inv.seller.name ? inv.seller.name : '')}</div> 
 <div class="pgrid">${sellerContactRows}</div> 
 </div> 
 <div class="party-right"> 
-<div class="party-label">${t.customer}</div><div class="party-name">${escapeHtml(inv.customer.name || '')}</div> 
+<div class="party-label">${t.customer}</div><div class="party-name">${escapeHtml(inv.customer.name ? inv.customer.name : '')}</div> 
 <div class="pgrid">${customerContactRows}</div> 
 </div> 
 </div> 
@@ -795,57 +1013,58 @@ ${inv.seller.name ? `
     renderHomePreview(); 
   })();
 
-  if($('btn-export-json')) { 
-    $('btn-export-json').addEventListener('click', () => { 
-      const dataToExport = { invoices: invoices, customers: customers, settings: settings, expense_records: expense_records }; 
-      const dataStr = JSON.stringify(dataToExport, null, 2); 
-      const blob = new Blob([dataStr], { type: "application/json" }); 
-      const url = URL.createObjectURL(blob); 
-      const a = document.createElement('a'); 
-      a.href = url; 
-      a.download = `rekinu_sistemas_dati_backup_${todayISO()}.json`; 
-      document.body.appendChild(a); 
-      a.click(); 
-      document.body.removeChild(a); 
-      URL.revokeObjectURL(url); 
-    }); 
+  if($('btn-export-json')) {$('btn-export-json').addEventListener('click', () => { 
+          const dataToExport = { invoices: invoices, customers: customers, settings: settings, expense_records: expense_records }; 
+          const dataStr = JSON.stringify(dataToExport, null, 2); 
+          const blob = new Blob([dataStr], { type: "application/json" }); 
+          const url = URL.createObjectURL(blob); 
+          const a = document.createElement('a'); 
+          a.href = url; 
+          a.download = `rekinu_sistemas_dati_backup_${todayISO()}.json`; 
+          document.body.appendChild(a); 
+          a.click(); 
+          document.body.removeChild(a); 
+          URL.revokeObjectURL(url); 
+      }); 
   }
 
   if($('btn-import-json')) { 
-    $('btn-import-json').addEventListener('click', () => { 
-      $('file-import-json').click(); 
-    }); 
+      $('btn-import-json').addEventListener('click', () => {$('file-import-json').click(); 
+      }); 
   }
 
-  if($('file-import-json')) { 
-    $('file-import-json').addEventListener('change', (e) => { 
-      const file = e.target.files[0]; 
-      if (!file) return; 
+  if($('file-import-json')) {$('file-import-json').addEventListener('change', (e) => { 
+          const file = e.target.files[0]; 
+          if (!file) return; 
 
-      const reader = new FileReader(); 
-      reader.onload = async (event) => { 
-        try { 
-          const d = JSON.parse(event.target.result); 
-          if(d.invoices) invoices = d.invoices;
-          if(d.customers) customers = d.customers;
-          if(d.settings) { 
-            settings.seller = d.settings.seller || settings.seller;
-            settings.tax = d.settings.tax || settings.tax;
-            settings.expenses = d.settings.expenses || settings.expenses || [];
-          }
-          if(d.expense_records) {
-            expense_records = d.expense_records;
-          }
-          await saveAll(); 
-          await autoGenerateExpenses(); 
-          fillSettingsForm(); renderHomePreview(); renderList(); populateCustomerSelect(); 
-          alert('Backup veiksmīgi ielādēts!'); 
-        } catch (err) { 
-          alert('Kļūda importējot datus. Pārbaudi JSON failu!'); 
-        } 
-        e.target.value = ''; 
-      }; 
-      reader.readAsText(file); 
-    }); 
+          const reader = new FileReader(); 
+          reader.onload = async (event) => { 
+            try { 
+              const d = JSON.parse(event.target.result); 
+              if(d.invoices) invoices = d.invoices;
+              if(d.customers) customers = d.customers;
+              if(d.settings) { 
+                settings.seller = d.settings.seller ? d.settings.seller : settings.seller;
+                settings.tax = d.settings.tax ? d.settings.tax : settings.tax;
+                settings.expenses = d.settings.expenses ? d.settings.expenses : [];
+                settings.vsaoi_payments = d.settings.vsaoi_payments ? d.settings.vsaoi_payments : {};
+              }
+              if(d.expense_records) {
+                expense_records = d.expense_records;
+              }
+              await saveAll(); 
+              await autoGenerateExpenses(); 
+              fillSettingsForm(); 
+              renderHomePreview(); 
+              renderList(); 
+              populateCustomerSelect(); 
+              alert('Backup veiksmīgi ielādēts!'); 
+            } catch (err) { 
+              alert('Kļūda importējot datus. Pārbaudi JSON failu!'); 
+            } 
+            e.target.value = ''; 
+          }; 
+          reader.readAsText(file); 
+      }); 
   }
 })();
